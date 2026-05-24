@@ -5,7 +5,7 @@
     "jsx": "react-native",
     "module": "esnext",
     "target": "esnext",
-    "lib": "es2017",
+    "lib": ["es2017"],
     "noEmit": true,
     "isolatedModules": true,
     "allowSyntheticDefaultImports": true,

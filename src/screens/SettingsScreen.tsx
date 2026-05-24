@@ -13,7 +13,7 @@ import {
   NativeModules,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {calculateGigStats, GigStats} from '../utils/calculations';
+import {GigStats} from '../utils/calculations';
 
 interface SettingsScreenProps {
   lastOffer?: GigStats | null;
@@ -26,9 +26,9 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
 }) => {
   const [costPerMile, setCostPerMile] = useState('0.18');
   const [isMonitoring, setIsMonitoring] = useState(false);
-  const [accessibilityEnabled, setAccessibilityEnabled] = useState(false);
+  const [accessibilityEnabled, _setAccessibilityEnabled] = useState(false);
   const [overlayEnabled, setOverlayEnabled] = useState(false);
-  const [lastOffer, setLastOffer] = useState<GigStats | null>(
+  const [lastOffer, _setLastOffer] = useState<GigStats | null>(
     propLastOffer ?? null,
   );
 
@@ -206,7 +206,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
         <Text
           style={[
             styles.monitoringStatus,
-            {color: isMonitoring ? '#28a745' : '#dc3545'},
+            isMonitoring ? styles.monitoringActive : styles.monitoringInactive,
           ]}>
           {isMonitoring ? 'Monitoring Active' : 'Monitoring Inactive'}
         </Text>
@@ -353,6 +353,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     marginTop: 4,
+  },
+  monitoringActive: {
+    color: '#28a745',
+  },
+  monitoringInactive: {
+    color: '#dc3545',
   },
   offerCard: {
     marginHorizontal: 16,

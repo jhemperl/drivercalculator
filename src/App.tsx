@@ -1,5 +1,5 @@
 import React, {useState, useEffect, useCallback} from 'react';
-import {View, Text, StyleSheet, NativeModules, NativeEventEmitter} from 'react-native';
+import {NativeModules, NativeEventEmitter} from 'react-native';
 import {NavigationContainer} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import SettingsScreen from './screens/SettingsScreen';

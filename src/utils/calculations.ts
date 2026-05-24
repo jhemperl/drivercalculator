@@ -29,7 +29,9 @@ export function calculateGigStats(
     colorCode = 'yellow';
   }
 
-  const displayString = `$${grossPerMile.toFixed(2)}/mi | $${netHourly.toFixed(0)}/hr`;
+  const displayString = `$${grossPerMile.toFixed(2)}/mi | $${netHourly.toFixed(
+    0,
+  )}/hr`;
 
   return {
     payout,
