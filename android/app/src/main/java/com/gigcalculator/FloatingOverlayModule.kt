@@ -1,5 +1,6 @@
 package com.gigcalculator
 
+import android.content.Context
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable

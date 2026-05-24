@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReactContext
 import com.facebook.react.modules.core.DeviceEventManagerModule
 
@@ -53,7 +54,7 @@ class GigAccessibilityService : AccessibilityService() {
             val miles = milesStr.toDoubleOrNull()
 
             if (payout != null && miles != null) {
-                Log.d(TAG, "Offer detected - Payout: \$$payout, Miles: $miles")
+                Log.d(TAG, "Offer detected - Payout: $$payout, Miles: $miles")
                 emitOfferEvent(payout, miles)
             }
         }
@@ -68,16 +69,12 @@ class GigAccessibilityService : AccessibilityService() {
 
         val sb = StringBuilder()
 
-        // Get text from this node
         node.text?.let { sb.append(it).append(" ") }
         node.contentDescription?.let { sb.append(it).append(" ") }
 
-        // Recursively get text from children
         for (i in 0 until node.childCount) {
             node.getChild(i)?.let { child ->
                 sb.append(extractTextFromNode(child))
-                // Note: don't recycle child nodes obtained from getChild() on older APIs
-                // but on API 26+ it's managed by the framework
             }
         }
 
@@ -111,7 +108,7 @@ class GigAccessibilityService : AccessibilityService() {
                     val activityRecordClass = activityRecord.javaClass
                     val activityField = activityRecordClass.getDeclaredField("activity")
                     activityField.isAccessible = true
-                    val activity = activityField.get(activityThread)
+                    val activity = activityField.get(activityRecord)
                     if (activity is com.facebook.react.ReactActivity) {
                         val reactContextField = activity.javaClass.superclass?.getDeclaredField("mReactInstanceManager")
                             ?: continue
