@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useEffect, useCallback, useRef} from 'react';
 import {
   View,
   Text,
@@ -11,9 +11,12 @@ import {
   Linking,
   Platform,
   NativeModules,
+  AppState,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {GigStats} from '../utils/calculations';
+
+const {FloatingOverlay, GigBridge} = NativeModules;
 
 interface SettingsScreenProps {
   lastOffer?: GigStats | null;
@@ -26,11 +29,35 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
 }) => {
   const [costPerMile, setCostPerMile] = useState('0.18');
   const [isMonitoring, setIsMonitoring] = useState(false);
-  const [accessibilityEnabled, _setAccessibilityEnabled] = useState(false);
+  const [accessibilityEnabled, setAccessibilityEnabled] = useState(false);
   const [overlayEnabled, setOverlayEnabled] = useState(false);
-  const [lastOffer, _setLastOffer] = useState<GigStats | null>(
+  const [lastOffer, setLastOffer] = useState<GigStats | null>(
     propLastOffer ?? null,
   );
+
+  const appState = useRef(AppState.currentState);
+
+  const checkPermissions = useCallback(async () => {
+    if (Platform.OS !== 'android') return;
+
+    try {
+      if (FloatingOverlay) {
+        const overlayGranted = await FloatingOverlay.isPermissionGranted();
+        setOverlayEnabled(overlayGranted);
+      }
+
+      if (GigBridge) {
+        const accessibilityGranted = await GigBridge.isAccessibilityServiceEnabled();
+        setAccessibilityEnabled(accessibilityGranted);
+      }
+    } catch (error) {
+      console.error('Failed to check permissions:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    setLastOffer(propLastOffer ?? null);
+  }, [propLastOffer]);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -44,15 +71,33 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
       }
     };
     loadSettings();
-  }, []);
+    checkPermissions();
+
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        checkPermissions();
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [checkPermissions]);
 
   const handleCostPerMileChange = useCallback(
     async (value: string) => {
-      setCostPerMile(value);
+      const cleanValue = value.replace(/[^0-9.]/g, '');
+      if (cleanValue.split('.').length > 2) return;
+      
+      setCostPerMile(cleanValue);
       try {
-        await AsyncStorage.setItem('costPerMile', value);
+        await AsyncStorage.setItem('costPerMile', cleanValue);
         if (onCostPerMileChange) {
-          onCostPerMileChange(value);
+          onCostPerMileChange(cleanValue);
         }
       } catch (error) {
         console.error('Failed to save cost per mile:', error);
@@ -63,38 +108,36 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const handleToggleMonitoring = useCallback(
     async (value: boolean) => {
-      setIsMonitoring(value);
       if (value) {
-        if (NativeModules.FloatingOverlay) {
+        if (!accessibilityEnabled || !overlayEnabled) {
+          Alert.alert(
+            'Permissions Required',
+            'Please enable both Accessibility Service and Overlay permission to start monitoring.',
+          );
+          return;
+        }
+
+        if (FloatingOverlay) {
           try {
-            if (!overlayEnabled) {
-              await NativeModules.FloatingOverlay.requestPermission();
-              setOverlayEnabled(true);
-            }
-            await NativeModules.FloatingOverlay.createOverlay();
+            await FloatingOverlay.createOverlay();
+            setIsMonitoring(true);
           } catch (error) {
             console.error('Failed to start overlay:', error);
             Alert.alert('Error', 'Failed to create floating overlay.');
-            setIsMonitoring(false);
           }
-        } else {
-          Alert.alert(
-            'Not Available',
-            'Floating overlay is not available in this configuration.',
-          );
-          setIsMonitoring(false);
         }
       } else {
-        if (NativeModules.FloatingOverlay) {
+        if (FloatingOverlay) {
           try {
-            await NativeModules.FloatingOverlay.removeOverlay();
+            await FloatingOverlay.removeOverlay();
+            setIsMonitoring(false);
           } catch (error) {
             console.error('Failed to remove overlay:', error);
           }
         }
       }
     },
-    [overlayEnabled],
+    [accessibilityEnabled, overlayEnabled],
   );
 
   const handleAccessibilityPress = useCallback(() => {
@@ -103,29 +146,29 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
         () => {
           Alert.alert(
             'Error',
-            'Could not open Accessibility Settings manually.',
+            'Could not open Accessibility Settings. Please open them manually in System Settings.',
           );
         },
-      );
-    } else {
-      Alert.alert(
-        'Info',
-        'Accessibility Services are configured automatically on iOS.',
       );
     }
   }, []);
 
   const handleOverlayPermissionPress = useCallback(async () => {
-    if (NativeModules.FloatingOverlay) {
+    if (FloatingOverlay) {
       try {
-        await NativeModules.FloatingOverlay.requestPermission();
-        setOverlayEnabled(true);
+        await FloatingOverlay.requestPermission();
       } catch (error) {
         console.error('Failed to request overlay permission:', error);
-        Alert.alert('Error', 'Failed to request overlay permission.');
       }
+    }
+  }, []);
+
+  const handleSimulateOffer = useCallback(() => {
+    if (GigBridge && GigBridge.simulateOffer) {
+      // Simulate: $15.00 for 6 miles in 20 minutes
+      GigBridge.simulateOffer(15.00, 6.0, 'Uber (Simulated)', 20.0);
     } else {
-      Alert.alert('Not Available', 'Floating overlay module not found.');
+      Alert.alert('Error', 'Simulation not available');
     }
   }, []);
 
@@ -148,11 +191,11 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
       : '#cccccc';
 
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.title}>Gig Calculator Settings</Text>
+    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      <Text style={styles.title}>Gig Calculator</Text>
 
       <View style={styles.section}>
-        <Text style={styles.label}>Cost Per Mile ($)</Text>
+        <Text style={styles.label}>Vehicle Cost Per Mile ($)</Text>
         <TextInput
           style={styles.input}
           value={costPerMile}
@@ -161,33 +204,40 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
           placeholder="0.18"
           accessibilityLabel="Cost per mile input"
         />
+        <Text style={styles.helperText}>Used to calculate net profit (fuel, wear, etc.)</Text>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Permission Status</Text>
+        <Text style={styles.sectionTitle}>Permissions</Text>
 
         <View style={styles.permissionRow}>
-          <Text style={styles.permissionLabel}>Accessibility Service</Text>
+          <View>
+            <Text style={styles.permissionLabel}>Accessibility Service</Text>
+            <Text style={styles.permissionSubLabel}>Required to read Uber/DoorDash data</Text>
+          </View>
           {accessibilityEnabled ? (
             <Text style={styles.statusEnabled}>Enabled</Text>
           ) : (
             <TouchableOpacity
               style={styles.statusButton}
               onPress={handleAccessibilityPress}>
-              <Text style={styles.statusDisabled}>Disabled</Text>
+              <Text style={styles.statusDisabled}>Setup</Text>
             </TouchableOpacity>
           )}
         </View>
 
         <View style={styles.permissionRow}>
-          <Text style={styles.permissionLabel}>Overlay Permission</Text>
+          <View>
+            <Text style={styles.permissionLabel}>Display Over Other Apps</Text>
+            <Text style={styles.permissionSubLabel}>Required for the floating bubble</Text>
+          </View>
           {overlayEnabled ? (
             <Text style={styles.statusEnabled}>Granted</Text>
           ) : (
             <TouchableOpacity
               style={styles.statusButton}
               onPress={handleOverlayPermissionPress}>
-              <Text style={styles.statusDisabled}>Not Granted</Text>
+              <Text style={styles.statusDisabled}>Setup</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -195,21 +245,15 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
       <View style={styles.section}>
         <View style={styles.switchRow}>
-          <Text style={styles.switchLabel}>Start Monitoring</Text>
+          <Text style={styles.switchLabel}>Floating Bubble Active</Text>
           <Switch
             value={isMonitoring}
             onValueChange={handleToggleMonitoring}
             trackColor={{false: '#ccc', true: '#81b0ff'}}
             thumbColor={isMonitoring ? '#2196F3' : '#f4f3f4'}
+            disabled={!accessibilityEnabled || !overlayEnabled}
           />
         </View>
-        <Text
-          style={[
-            styles.monitoringStatus,
-            isMonitoring ? styles.monitoringActive : styles.monitoringInactive,
-          ]}>
-          {isMonitoring ? 'Monitoring Active' : 'Monitoring Inactive'}
-        </Text>
       </View>
 
       {lastOffer && (
@@ -218,7 +262,12 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
             styles.offerCard,
             {backgroundColor: cardColor, borderColor: cardBorderColor},
           ]}>
-          <Text style={styles.offerCardTitle}>Last Offer</Text>
+          <Text style={styles.offerCardTitle}>Last Detected Offer</Text>
+          
+          {lastOffer.appName && (
+            <Text style={styles.sourceAppText}>{lastOffer.appName}</Text>
+          )}
+
           <View style={styles.offerStatRow}>
             <Text style={styles.offerStatLabel}>Payout:</Text>
             <Text style={styles.offerStatValue}>
@@ -232,9 +281,22 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </Text>
           </View>
           <View style={styles.offerStatRow}>
+            <Text style={styles.offerStatLabel}>Est. Time:</Text>
+            <Text style={styles.offerStatValue}>
+              {lastOffer.timeMinutes.toFixed(0)} min
+            </Text>
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.offerStatRow}>
             <Text style={styles.offerStatLabel}>Gross/mi:</Text>
             <Text style={styles.offerStatValue}>
               ${lastOffer.grossPerMile.toFixed(2)}
+            </Text>
+          </View>
+          <View style={styles.offerStatRow}>
+            <Text style={styles.offerStatLabel}>Est. Net Hourly:</Text>
+            <Text style={styles.offerStatValue}>
+              ${lastOffer.netHourly.toFixed(0)}/hr
             </Text>
           </View>
           <View style={styles.offerStatRow}>
@@ -243,23 +305,17 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
               ${lastOffer.netProfit.toFixed(2)}
             </Text>
           </View>
-          <View style={styles.offerStatRow}>
-            <Text style={styles.offerStatLabel}>Net Hourly:</Text>
-            <Text style={styles.offerStatValue}>
-              ${lastOffer.netHourly.toFixed(2)}/hr
-            </Text>
-          </View>
-          <View style={styles.offerStatRow}>
-            <Text style={styles.offerStatLabel}>Est. Time:</Text>
-            <Text style={styles.offerStatValue}>
-              {lastOffer.estimatedMinutes.toFixed(0)} min
-            </Text>
-          </View>
           <Text style={styles.offerDisplayString}>
             {lastOffer.displayString}
           </Text>
         </View>
       )}
+
+      <TouchableOpacity 
+        style={styles.simulateButton} 
+        onPress={handleSimulateOffer}>
+        <Text style={styles.simulateButtonText}>Simulate Uber Offer</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 };
@@ -267,137 +323,169 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f8f9fa',
+  },
+  contentContainer: {
+    paddingBottom: 40,
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginVertical: 20,
-    color: '#333',
+    marginVertical: 24,
+    color: '#1a73e8',
   },
   section: {
     backgroundColor: '#ffffff',
     marginHorizontal: 16,
-    marginBottom: 12,
-    borderRadius: 8,
+    marginBottom: 16,
+    borderRadius: 12,
     padding: 16,
+    elevation: 3,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
+    shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowRadius: 4,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
-    color: '#333',
+    fontWeight: '700',
+    marginBottom: 16,
+    color: '#202124',
   },
   label: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
     marginBottom: 8,
-    color: '#555',
+    color: '#5f6368',
+  },
+  helperText: {
+    fontSize: 12,
+    color: '#80868b',
+    marginTop: 4,
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: '#dadce0',
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 16,
-    backgroundColor: '#fafafa',
+    fontSize: 18,
+    backgroundColor: '#fff',
+    color: '#202124',
   },
   permissionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#f1f3f4',
   },
   permissionLabel: {
     fontSize: 16,
-    color: '#555',
+    fontWeight: '500',
+    color: '#202124',
+  },
+  permissionSubLabel: {
+    fontSize: 12,
+    color: '#5f6368',
   },
   statusEnabled: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#28a745',
-  },
-  statusDisabled: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#dc3545',
-  },
-  statusButton: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1e8e3e',
+    backgroundColor: '#e6f4ea',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 4,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  statusDisabled: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#d93025',
+  },
+  statusButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#fce8e6',
+    borderRadius: 16,
   },
   switchRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
   },
   switchLabel: {
     fontSize: 16,
-    fontWeight: '500',
-    color: '#555',
-  },
-  monitoringStatus: {
-    fontSize: 14,
     fontWeight: '600',
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  monitoringActive: {
-    color: '#28a745',
-  },
-  monitoringInactive: {
-    color: '#dc3545',
+    color: '#202124',
   },
   offerCard: {
     marginHorizontal: 16,
-    marginBottom: 20,
-    borderRadius: 8,
-    padding: 16,
+    marginTop: 8,
+    borderRadius: 12,
+    padding: 20,
     borderWidth: 2,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    elevation: 4,
   },
   offerCardTitle: {
     fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 4,
+    color: '#202124',
+    textAlign: 'center',
+  },
+  sourceAppText: {
+    fontSize: 12,
     fontWeight: '700',
-    marginBottom: 12,
-    color: '#333',
+    color: '#5f6368',
+    textAlign: 'center',
+    marginBottom: 16,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   offerStatRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   offerStatLabel: {
-    fontSize: 15,
-    color: '#555',
+    fontSize: 16,
+    color: '#5f6368',
   },
   offerStatValue: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#333',
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#202124',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    marginVertical: 12,
   },
   offerDisplayString: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '900',
     textAlign: 'center',
-    marginTop: 10,
-    color: '#333',
+    marginTop: 16,
+    color: '#202124',
+  },
+  simulateButton: {
+    marginTop: 24,
+    marginHorizontal: 16,
+    padding: 16,
+    backgroundColor: '#e8f0fe',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1a73e8',
+    alignItems: 'center',
+  },
+  simulateButtonText: {
+    color: '#1a73e8',
+    fontWeight: '700',
+    fontSize: 16,
   },
 });
 

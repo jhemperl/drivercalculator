@@ -14,6 +14,7 @@ function App(): React.JSX.Element {
   const handleCostPerMileChange = useCallback((value: string) => {
     const parsed = parseFloat(value);
     if (!isNaN(parsed) && parsed >= 0) {
+      setLastOffer(null); // Clear last offer when cost changes to force recalc
       setCostPerMile(parsed);
     }
   }, []);
@@ -28,10 +29,21 @@ function App(): React.JSX.Element {
     const eventEmitter = new NativeEventEmitter(gigBridge);
     const subscription = eventEmitter.addListener(
       'onGigOfferDetected',
-      (event: {payout: number; miles: number}) => {
+      (event: {
+        payout: number;
+        miles: number;
+        appName?: string;
+        timeMinutes?: number;
+      }) => {
         console.log('Gig offer detected:', event);
 
-        const stats = calculateGigStats(event.payout, event.miles, costPerMile);
+        const stats = calculateGigStats(
+          event.payout,
+          event.miles,
+          costPerMile,
+          event.appName,
+          event.timeMinutes,
+        );
         setLastOffer(stats);
 
         const floatingOverlay = NativeModules.FloatingOverlay;
