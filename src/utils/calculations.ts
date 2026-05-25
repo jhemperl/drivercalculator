@@ -18,8 +18,9 @@ export function calculateGigStats(
   detectedMinutes?: number,
 ): GigStats {
   // Use detected minutes if available, otherwise fallback to 2.5 min/mile estimate
-  const timeMinutes = detectedMinutes && detectedMinutes > 0 ? detectedMinutes : miles * 2.5;
-  
+  const timeMinutes =
+    detectedMinutes && detectedMinutes > 0 ? detectedMinutes : miles * 2.5;
+
   const grossPerMile = miles > 0 ? payout / miles : 0;
   const netProfit = payout - miles * costPerMile;
   const netHourly = timeMinutes > 0 ? (netProfit / timeMinutes) * 60 : 0;
@@ -34,7 +35,9 @@ export function calculateGigStats(
     colorCode = 'yellow';
   }
 
-  const displayString = `$${grossPerMile.toFixed(2)}/mi | $${netHourly.toFixed(0)}/hr`;
+  const displayString = `$${grossPerMile.toFixed(2)}/mi | $${netHourly.toFixed(
+    0,
+  )}/hr`;
 
   return {
     payout,

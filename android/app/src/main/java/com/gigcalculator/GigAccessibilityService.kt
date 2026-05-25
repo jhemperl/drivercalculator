@@ -1,6 +1,8 @@
 package com.gigcalculator
 
 import android.accessibilityservice.AccessibilityService
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -16,6 +18,9 @@ class GigAccessibilityService : AccessibilityService() {
             "com.doordash.driverapp" to "DoorDash",
             "com.ubercab.driver" to "Uber"
         )
+        private val PAYOUT_REGEX = Regex("""\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)""")
+        private val MILES_REGEX = Regex("""(\d+(?:\.\d+)?)\s*(?:mi|miles)""", RegexOption.IGNORE_CASE)
+        private val TIME_REGEX = Regex("""(\d+)\s*(?:min|mins|minutes)""", RegexOption.IGNORE_CASE)
     }
 
     override fun onServiceConnected() {
@@ -40,16 +45,9 @@ class GigAccessibilityService : AccessibilityService() {
         extractText(rootNode, textElements)
         val allText = textElements.joinToString("|").lowercase()
 
-        // Payout: $12.34
-        val payoutRegex = Regex("""\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)""")
-        // Miles: 5.2 mi
-        val milesRegex = Regex("""(\d+(?:\.\d+)?)\s*(?:mi|miles)""", RegexOption.IGNORE_CASE)
-        // Time: 15 min or 15 mins
-        val timeRegex = Regex("""(\d+)\s*(?:min|mins|minutes)""", RegexOption.IGNORE_CASE)
-
-        val payoutMatches = payoutRegex.findAll(allText).toList()
-        val milesMatches = milesRegex.findAll(allText).toList()
-        val timeMatches = timeRegex.findAll(allText).toList()
+        val payoutMatches = PAYOUT_REGEX.findAll(allText).toList()
+        val milesMatches = MILES_REGEX.findAll(allText).toList()
+        val timeMatches = TIME_REGEX.findAll(allText).toList()
 
         if (payoutMatches.isNotEmpty() && milesMatches.isNotEmpty()) {
             val payout = payoutMatches
@@ -103,30 +101,34 @@ class GigAccessibilityService : AccessibilityService() {
         for (i in 0 until node.childCount) {
             val child = node.getChild(i)
             extractText(child, elements)
-            child?.recycle()
         }
     }
 
     private fun emitOfferEvent(payout: Double, miles: Double, appName: String, timeMinutes: Double?) {
-        try {
-            val reactApp = application as? ReactApplication
-            val context = reactApp?.reactNativeHost?.reactInstanceManager?.currentReactContext
-            if (context != null && context.hasActiveCatalystInstance()) {
-                val params = Arguments.createMap().apply {
-                    putDouble("payout", payout)
-                    putDouble("miles", miles)
-                    putString("appName", appName)
-                    if (timeMinutes != null) {
-                        putDouble("timeMinutes", timeMinutes)
+        // onAccessibilityEvent runs on a background thread — dispatch to main thread
+        mainHandler.post {
+            try {
+                val reactApp = application as? ReactApplication
+                val context = reactApp?.reactNativeHost?.reactInstanceManager?.currentReactContext
+                if (context != null && context.hasActiveCatalystInstance()) {
+                    val params = Arguments.createMap().apply {
+                        putDouble("payout", payout)
+                        putDouble("miles", miles)
+                        putString("appName", appName)
+                        if (timeMinutes != null) {
+                            putDouble("timeMinutes", timeMinutes)
+                        }
                     }
+                    context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                        .emit("onGigOfferDetected", params)
                 }
-                context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-                    .emit("onGigOfferDetected", params)
+            } catch (e: Exception) {
+                Log.e(TAG, "Emit failed", e)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Emit failed", e)
         }
     }
 
     override fun onInterrupt() {}
+
+    private val mainHandler = Handler(Looper.getMainLooper())
 }

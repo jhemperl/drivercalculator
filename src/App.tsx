@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useEffect, useCallback, useMemo} from 'react';
 import {NativeModules, NativeEventEmitter} from 'react-native';
 import {NavigationContainer} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
@@ -62,6 +62,15 @@ function App(): React.JSX.Element {
     };
   }, [costPerMile]);
 
+  // Memoize screen props to prevent unnecessary re-renders
+  const settingsScreenProps = useMemo(
+    () => ({
+      lastOffer,
+      onCostPerMileChange: handleCostPerMileChange,
+    }),
+    [lastOffer, handleCostPerMileChange],
+  );
+
   return (
     <NavigationContainer>
       <Tab.Navigator
@@ -82,12 +91,7 @@ function App(): React.JSX.Element {
             title: 'Gig Calculator',
             tabBarLabel: 'Settings',
           }}>
-          {() => (
-            <SettingsScreen
-              lastOffer={lastOffer}
-              onCostPerMileChange={handleCostPerMileChange}
-            />
-          )}
+          {props => <SettingsScreen {...props} {...settingsScreenProps} />}
         </Tab.Screen>
       </Tab.Navigator>
     </NavigationContainer>

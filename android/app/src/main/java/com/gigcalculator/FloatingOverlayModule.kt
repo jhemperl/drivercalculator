@@ -182,6 +182,11 @@ class FloatingOverlayModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    override fun onCatalystInstanceDestroy() {
+        removeOverlay()
+        super.onCatalystInstanceDestroy()
+    }
+
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     private fun dpToPx(dp: Float): Float {

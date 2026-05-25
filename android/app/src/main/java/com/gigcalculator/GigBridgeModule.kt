@@ -50,16 +50,4 @@ class GigBridgeModule(reactContext: ReactApplicationContext) :
         // Keep: Required by React Native
     }
     // ------------------------------------------------
-
-    @ReactMethod
-    fun sendOfferData(payout: Double, miles: Double) {
-        val params = Arguments.createMap().apply {
-            putDouble("payout", payout)
-            putDouble("miles", miles)
-        }
-
-        reactApplicationContext
-            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            .emit("onGigOfferDetected", params)
-    }
 }

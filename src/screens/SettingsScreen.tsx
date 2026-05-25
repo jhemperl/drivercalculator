@@ -36,9 +36,12 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
   );
 
   const appState = useRef(AppState.currentState);
+  const initialLoadDone = useRef(false);
 
   const checkPermissions = useCallback(async () => {
-    if (Platform.OS !== 'android') return;
+    if (Platform.OS !== 'android') {
+      return;
+    }
 
     try {
       if (FloatingOverlay) {
@@ -47,7 +50,8 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
       }
 
       if (GigBridge) {
-        const accessibilityGranted = await GigBridge.isAccessibilityServiceEnabled();
+        const accessibilityGranted =
+          await GigBridge.isAccessibilityServiceEnabled();
         setAccessibilityEnabled(accessibilityGranted);
       }
     } catch (error) {
@@ -65,7 +69,12 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
         const savedCost = await AsyncStorage.getItem('costPerMile');
         if (savedCost !== null) {
           setCostPerMile(savedCost);
+          // Propagate loaded value to parent on initial load
+          if (!initialLoadDone.current && onCostPerMileChange) {
+            onCostPerMileChange(savedCost);
+          }
         }
+        initialLoadDone.current = true;
       } catch (error) {
         console.error('Failed to load settings:', error);
       }
@@ -86,13 +95,15 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
     return () => {
       subscription.remove();
     };
-  }, [checkPermissions]);
+  }, [checkPermissions, onCostPerMileChange]);
 
   const handleCostPerMileChange = useCallback(
     async (value: string) => {
       const cleanValue = value.replace(/[^0-9.]/g, '');
-      if (cleanValue.split('.').length > 2) return;
-      
+      if (cleanValue.split('.').length > 2) {
+        return;
+      }
+
       setCostPerMile(cleanValue);
       try {
         await AsyncStorage.setItem('costPerMile', cleanValue);
@@ -166,7 +177,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const handleSimulateOffer = useCallback(() => {
     if (GigBridge && GigBridge.simulateOffer) {
       // Simulate: $15.00 for 6 miles in 20 minutes
-      GigBridge.simulateOffer(15.00, 6.0, 'Uber (Simulated)', 20.0);
+      GigBridge.simulateOffer(15.0, 6.0, 'Uber (Simulated)', 20.0);
     } else {
       Alert.alert('Error', 'Simulation not available');
     }
@@ -191,7 +202,9 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
       : '#cccccc';
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}>
       <Text style={styles.title}>Gig Calculator</Text>
 
       <View style={styles.section}>
@@ -204,7 +217,9 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
           placeholder="0.18"
           accessibilityLabel="Cost per mile input"
         />
-        <Text style={styles.helperText}>Used to calculate net profit (fuel, wear, etc.)</Text>
+        <Text style={styles.helperText}>
+          Used to calculate net profit (fuel, wear, etc.)
+        </Text>
       </View>
 
       <View style={styles.section}>
@@ -213,7 +228,9 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
         <View style={styles.permissionRow}>
           <View>
             <Text style={styles.permissionLabel}>Accessibility Service</Text>
-            <Text style={styles.permissionSubLabel}>Required to read Uber/DoorDash data</Text>
+            <Text style={styles.permissionSubLabel}>
+              Required to read Uber/DoorDash data
+            </Text>
           </View>
           {accessibilityEnabled ? (
             <Text style={styles.statusEnabled}>Enabled</Text>
@@ -229,7 +246,9 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
         <View style={styles.permissionRow}>
           <View>
             <Text style={styles.permissionLabel}>Display Over Other Apps</Text>
-            <Text style={styles.permissionSubLabel}>Required for the floating bubble</Text>
+            <Text style={styles.permissionSubLabel}>
+              Required for the floating bubble
+            </Text>
           </View>
           {overlayEnabled ? (
             <Text style={styles.statusEnabled}>Granted</Text>
@@ -263,7 +282,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
             {backgroundColor: cardColor, borderColor: cardBorderColor},
           ]}>
           <Text style={styles.offerCardTitle}>Last Detected Offer</Text>
-          
+
           {lastOffer.appName && (
             <Text style={styles.sourceAppText}>{lastOffer.appName}</Text>
           )}
@@ -311,8 +330,8 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </View>
       )}
 
-      <TouchableOpacity 
-        style={styles.simulateButton} 
+      <TouchableOpacity
+        style={styles.simulateButton}
         onPress={handleSimulateOffer}>
         <Text style={styles.simulateButtonText}>Simulate Uber Offer</Text>
       </TouchableOpacity>
